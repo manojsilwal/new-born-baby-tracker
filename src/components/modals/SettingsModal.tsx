@@ -13,6 +13,9 @@ import {
   ShieldCheck,
   HelpCircle,
   Baby,
+  Cloud,
+  RefreshCw,
+  Copy,
 } from 'lucide-react';
 
 export const SettingsModal: React.FC = () => {
@@ -25,11 +28,41 @@ export const SettingsModal: React.FC = () => {
     resetToDemoData,
     clearAllData,
     openModal,
+    syncStatus,
+    syncWithServer,
+    enableSync,
+    disableSync,
+    showToast,
   } = useTracker();
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [confirmClear, setConfirmClear] = useState<boolean>(false);
   const [confirmReset, setConfirmReset] = useState<boolean>(false);
+
+  // Sync state
+  const [syncCodeInput, setSyncCodeInput] = useState<string>(
+    state.settings.familySyncCode || ''
+  );
+  const [isConnecting, setIsConnecting] = useState(false);
+
+  const handleConnectSync = async () => {
+    if (!syncCodeInput.trim()) return;
+    setIsConnecting(true);
+    await enableSync(syncCodeInput.trim());
+    setIsConnecting(false);
+  };
+
+  const handleGenerateCode = () => {
+    const randomCode = `maya-${Math.floor(1000 + Math.random() * 9000)}`;
+    setSyncCodeInput(randomCode);
+  };
+
+  const handleCopyCode = () => {
+    if (state.settings.familySyncCode) {
+      navigator.clipboard.writeText(state.settings.familySyncCode);
+      showToast('Family code copied to clipboard');
+    }
+  };
 
   const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -103,6 +136,132 @@ export const SettingsModal: React.FC = () => {
             >
               Edit
             </button>
+          </div>
+
+          {/* ================= CLOUD SERVER STORAGE & MULTI-CAREGIVER SYNC ================= */}
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center space-x-1.5">
+                <Cloud className="w-3.5 h-3.5 text-sage-600" />
+                <span>Supabase Cloud Server Storage</span>
+              </label>
+              {state.settings.familySyncCode && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-semibold flex items-center space-x-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Cloud Active</span>
+                </span>
+              )}
+            </div>
+
+            <div className="bg-white dark:bg-charcoal-800 p-4 rounded-2xl border border-warmgray-200 dark:border-charcoal-700 space-y-3">
+              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                Connect your free Supabase cloud database to persist records on the server and keep both parents or
+                caregivers automatically in sync.
+              </p>
+
+              {state.settings.familySyncCode ? (
+                /* Connected State */
+                <div className="space-y-3">
+                  <div className="p-3 bg-warmgray-50 dark:bg-charcoal-750 rounded-xl border border-warmgray-200 dark:border-charcoal-700 flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] text-slate-400 font-medium block">Active Family Code</span>
+                      <span className="font-mono text-sm font-bold text-slate-900 dark:text-slate-100 uppercase">
+                        {state.settings.familySyncCode}
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <button
+                        type="button"
+                        onClick={handleCopyCode}
+                        className="p-2 rounded-lg bg-warmgray-200 dark:bg-charcoal-650 text-slate-600 dark:text-slate-300 hover:bg-warmgray-300 transition-colors"
+                        title="Copy Family Code"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-500">
+                      {syncStatus === 'syncing' ? (
+                        <span className="flex items-center space-x-1 text-sage-600">
+                          <RefreshCw className="w-3 h-3 animate-spin" />
+                          <span>Syncing with server...</span>
+                        </span>
+                      ) : state.settings.lastSyncedAt ? (
+                        <span>Last synced: {new Date(state.settings.lastSyncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      ) : (
+                        <span>Connected to Supabase</span>
+                      )}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => syncWithServer()}
+                      disabled={syncStatus === 'syncing'}
+                      className="px-3 py-1.5 rounded-lg bg-sage-600 hover:bg-sage-700 text-white font-medium text-xs flex items-center space-x-1 transition-colors disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
+                      <span>Sync Now</span>
+                    </button>
+                  </div>
+
+                  <div className="pt-2 border-t border-warmgray-100 dark:border-charcoal-700 flex items-center justify-between">
+                    <span className="text-xs text-slate-400">Share this code with your partner</span>
+                    <button
+                      type="button"
+                      onClick={disableSync}
+                      className="text-xs text-rose-500 hover:underline"
+                    >
+                      Disconnect Cloud
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Setup State */
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                      Family Sync Code
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="text"
+                        placeholder="e.g. maya-family-4821"
+                        value={syncCodeInput}
+                        onChange={(e) => setSyncCodeInput(e.target.value)}
+                        className="flex-1 px-3 py-2 text-xs sm:text-sm rounded-xl border border-warmgray-300 dark:border-charcoal-700 bg-white dark:bg-charcoal-800 text-slate-900 dark:text-slate-100 font-mono focus:outline-none focus:ring-2 focus:ring-sage-500 min-h-[44px]"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleGenerateCode}
+                        className="px-3 py-2 text-xs font-medium rounded-xl border border-warmgray-300 dark:border-charcoal-700 text-slate-700 dark:text-slate-300 hover:bg-warmgray-100 min-h-[44px] whitespace-nowrap"
+                      >
+                        Generate Code
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleConnectSync}
+                    disabled={!syncCodeInput.trim() || isConnecting}
+                    className="w-full py-2.5 px-4 rounded-xl bg-sage-600 hover:bg-sage-700 text-white font-medium text-xs flex items-center justify-center space-x-1.5 transition-colors disabled:opacity-50 min-h-[44px]"
+                  >
+                    {isConnecting ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Connecting to Supabase...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Cloud className="w-3.5 h-3.5" />
+                        <span>Enable Server Storage & Sync</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Theme Selector */}
@@ -404,9 +563,9 @@ export const SettingsModal: React.FC = () => {
             <div className="flex items-start space-x-2.5 p-3 rounded-xl bg-sage-50/70 dark:bg-sage-950/30 border border-sage-200 dark:border-sage-900/50 text-xs text-sage-900 dark:text-sage-300">
               <ShieldCheck className="w-4 h-4 text-sage-600 dark:text-sage-400 flex-shrink-0 mt-0.5" />
               <div>
-                <span className="font-semibold block mb-0.5">100% Local-First & Private</span>
-                All your baby's logs are stored solely in your local browser storage. No accounts, tracking, or cloud
-                servers are used.
+                <span className="font-semibold block mb-0.5">Secure Storage & Privacy</span>
+                Records are cached in your local browser and synced to your dedicated Supabase server database when
+                configured.
               </div>
             </div>
 

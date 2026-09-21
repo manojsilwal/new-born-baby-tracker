@@ -138,6 +138,10 @@ export interface AppSettings {
   weightUnit: 'lb_oz' | 'kg';
   lengthUnit: 'in' | 'cm';
   headUnit: 'in' | 'cm';
+  // Supabase Cloud Storage & Multi-caregiver sync
+  familySyncCode?: string;
+  autoSyncEnabled?: boolean;
+  lastSyncedAt?: string;
 }
 
 export interface AppState {

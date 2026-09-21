@@ -2,13 +2,14 @@
 import React from 'react';
 import { useTracker } from '../context/TrackerContext';
 import { calculateBabyAge, formatWeekdayDate } from '../utils/units';
-import { Settings, Baby, Moon, Sun } from 'lucide-react';
+import { Settings, Baby, Moon, Sun, Cloud, RefreshCw } from 'lucide-react';
 
 export const Header: React.FC = () => {
-  const { state, activeTab, openModal, updateSettings } = useTracker();
+  const { state, activeTab, openModal, updateSettings, syncStatus } = useTracker();
   const todayStr = formatWeekdayDate(new Date().toISOString());
   const babyName = state.profile.name || 'Baby';
   const babyAge = calculateBabyAge(state.profile.birthDate);
+  const isCloudSynced = !!state.settings.familySyncCode;
 
   const toggleTheme = () => {
     const nextTheme = state.settings.theme === 'dark' ? 'light' : 'dark';
@@ -25,6 +26,19 @@ export const Header: React.FC = () => {
             <h1 className="text-base font-bold tracking-tight text-slate-900 dark:text-slate-100">
               Newborn Tracker
             </h1>
+            {isCloudSynced && (
+              <span
+                className="flex items-center space-x-1 text-[10px] text-sage-600 dark:text-sage-400 bg-sage-50 dark:bg-sage-950/60 px-1.5 py-0.5 rounded-md border border-sage-200 dark:border-sage-900"
+                title={`Cloud storage active (Family code: ${state.settings.familySyncCode})`}
+              >
+                {syncStatus === 'syncing' ? (
+                  <RefreshCw className="w-2.5 h-2.5 animate-spin text-sage-600" />
+                ) : (
+                  <Cloud className="w-2.5 h-2.5 text-sage-600 dark:text-sage-400" />
+                )}
+                <span>Cloud</span>
+              </span>
+            )}
           </div>
           {activeTab === 'today' ? (
             <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">

@@ -18,6 +18,11 @@ import {
 } from '../types/tracker';
 import { createInitialMockState } from '../utils/mockData';
 import { generateUUID, getActiveNursingTotals } from '../utils/units';
+import {
+  uploadStateToServer,
+  fetchStateFromServer,
+  mergeStates,
+} from '../utils/supabaseSync';
 
 export const STORAGE_KEY = 'newborn-tracker:v1';
 
@@ -29,6 +34,8 @@ export interface ToastData {
   duration?: number;
 }
 
+export type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error';
+
 interface TrackerContextType {
   state: AppState;
   activeTab: 'today' | 'history' | 'health';
@@ -36,6 +43,12 @@ interface TrackerContextType {
   toast: ToastData | null;
   showToast: (message: string, undoAction?: () => void, undoLabel?: string) => void;
   dismissToast: () => void;
+
+  // Cloud Sync Status & Actions
+  syncStatus: SyncStatus;
+  syncWithServer: (customCode?: string) => Promise<{ success: boolean; error?: string }>;
+  enableSync: (familyCode: string) => Promise<{ success: boolean; error?: string }>;
+  disableSync: () => void;
 
   // Events CRUD
   addEvent: (event: NewTrackerEvent) => string;
@@ -177,7 +190,11 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setEditingHealthNote(null);
   };
 
-  // 2. Persist State whenever changed
+  // Cloud Sync state
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
+  const syncTimeoutRef = useRef<number | null>(null);
+
+  // 2. Persist State to localStorage whenever changed
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -211,6 +228,119 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
     mediaQuery.addEventListener('change', handleSystemChange);
     return () => mediaQuery.removeEventListener('change', handleSystemChange);
   }, [state.settings.theme]);
+
+  // ================= CLOUD SYNC LOGIC =================
+  const syncWithServer = useCallback(
+    async (customCode?: string): Promise<{ success: boolean; error?: string }> => {
+      const code = customCode || state.settings.familySyncCode;
+      if (!code || !code.trim()) {
+        return { success: false, error: 'No family sync code configured' };
+      }
+
+      setSyncStatus('syncing');
+
+      // 1. Fetch remote state
+      const remoteRes = await fetchStateFromServer(code);
+
+      if (!remoteRes.success && remoteRes.error?.includes('No data found')) {
+        // First time upload for this code
+        const uploadRes = await uploadStateToServer(code, state);
+        if (uploadRes.success) {
+          const nowIso = new Date().toISOString();
+          setState((prev) => ({
+            ...prev,
+            settings: { ...prev.settings, lastSyncedAt: nowIso },
+          }));
+          setSyncStatus('synced');
+          return { success: true };
+        } else {
+          setSyncStatus('error');
+          return { success: false, error: uploadRes.error };
+        }
+      }
+
+      if (!remoteRes.success || !remoteRes.state) {
+        setSyncStatus('error');
+        return { success: false, error: remoteRes.error };
+      }
+
+      // 2. Merge local + remote
+      const merged = mergeStates(state, remoteRes.state);
+      const nowIso = new Date().toISOString();
+      const updatedState = {
+        ...merged,
+        settings: {
+          ...merged.settings,
+          familySyncCode: code,
+          autoSyncEnabled: true,
+          lastSyncedAt: nowIso,
+        },
+      };
+
+      // 3. Upload merged back to server
+      const uploadRes = await uploadStateToServer(code, updatedState);
+      if (uploadRes.success) {
+        setState(updatedState);
+        setSyncStatus('synced');
+        return { success: true };
+      } else {
+        setSyncStatus('error');
+        return { success: false, error: uploadRes.error };
+      }
+    },
+    [state]
+  );
+
+  const enableSync = useCallback(
+    async (familyCode: string): Promise<{ success: boolean; error?: string }> => {
+      const clean = familyCode.trim().toLowerCase();
+      if (!clean) return { success: false, error: 'Please enter a family sync code' };
+
+      const res = await syncWithServer(clean);
+      if (res.success) {
+        setState((prev) => ({
+          ...prev,
+          settings: {
+            ...prev.settings,
+            familySyncCode: clean,
+            autoSyncEnabled: true,
+          },
+        }));
+        showToast('Connected to Supabase cloud sync');
+      } else {
+        showToast(`Sync error: ${res.error}`);
+      }
+      return res;
+    },
+    [syncWithServer, showToast]
+  );
+
+  const disableSync = useCallback(() => {
+    setState((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        familySyncCode: undefined,
+        autoSyncEnabled: false,
+      },
+    }));
+    setSyncStatus('idle');
+    showToast('Cloud sync disabled');
+  }, [showToast]);
+
+  // Debounced background auto-sync when state changes
+  useEffect(() => {
+    if (state.settings.autoSyncEnabled && state.settings.familySyncCode) {
+      if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+      syncTimeoutRef.current = window.setTimeout(() => {
+        uploadStateToServer(state.settings.familySyncCode!, state)
+          .then((res) => {
+            if (res.success) setSyncStatus('synced');
+          })
+          .catch(() => setSyncStatus('error'));
+      }, 3000);
+    }
+  }, [state.events, state.appointments, state.growthRecords, state.healthNotes, state.profile]);
 
   // ================= CRUD: Tracker Events =================
   const addEvent = useCallback(
@@ -839,6 +969,10 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
         toast,
         showToast,
         dismissToast,
+        syncStatus,
+        syncWithServer,
+        enableSync,
+        disableSync,
         addEvent,
         updateEvent,
         deleteEvent,
