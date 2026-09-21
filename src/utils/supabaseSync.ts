@@ -89,6 +89,41 @@ export async function fetchStateFromServer(
 }
 
 /**
+ * Permanently remove a family/baby blob from cloud storage (admin delete).
+ */
+export async function deleteFamilyFromServer(
+  familyCode: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!familyCode || !familyCode.trim()) {
+    return { success: false, error: 'Family code cannot be empty' };
+  }
+
+  try {
+    const cleanCode = familyCode.trim().toLowerCase();
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/baby_tracker_families?family_code=eq.${encodeURIComponent(cleanCode)}`,
+      {
+        method: 'DELETE',
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          Prefer: 'return=minimal',
+        },
+      }
+    );
+
+    if (!res.ok) {
+      const errText = await res.text();
+      return { success: false, error: errText || `Server returned ${res.status}` };
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Network error deleting family' };
+  }
+}
+
+/**
  * Find cloud family blobs that list this user as a member (by userId or email).
  * Used after login so caregivers land on their shared baby without re-entering profile.
  */

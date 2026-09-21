@@ -23,6 +23,7 @@ import {
   fetchStateFromServer,
   mergeStates,
   discoverFamiliesForUser,
+  deleteFamilyFromServer,
 } from '../utils/supabaseSync';
 import {
   createEmptyInitialState,
@@ -133,20 +134,24 @@ interface TrackerContextType {
     birthDate: string;
     members?: FamilyMember[];
   }) => Promise<{ success: boolean; error?: string }>;
-  /** Cloud babies linked to this login (after discovery). */
+  /** After login / switch: select | addNewborn | join | tracker */
+  babyGate: 'select' | 'addNewborn' | 'join' | 'tracker';
   cloudBootstrap: 'idle' | 'loading' | 'ready';
   discoveredBabies: DiscoveredBaby[];
-  forceOnboarding: boolean;
   adoptDiscoveredBaby: (baby: DiscoveredBaby) => void;
-  skipBabyDiscovery: () => void;
+  showBabyPicker: () => void;
+  startAddNewborn: () => void;
+  startJoinWithCode: () => void;
   resetToDemoData: () => void;
   clearAllData: () => void;
+  /** Permanently delete current baby profile (cloud + local). Admin only. */
+  deleteBabyProfile: () => Promise<{ success: boolean; error?: string }>;
   exportData: () => void;
   importData: (jsonStr: string) => { success: boolean; error?: string };
 
   // Modal Open Triggers
-  activeModal: 'feed' | 'diaper' | 'sleep' | 'temperature' | 'settings' | 'doctorSummary' | 'profile' | 'appointment' | 'growth' | 'healthNote' | null;
-  openModal: (modal: 'feed' | 'diaper' | 'sleep' | 'temperature' | 'settings' | 'doctorSummary' | 'profile' | 'appointment' | 'growth' | 'healthNote') => void;
+  activeModal: 'feed' | 'diaper' | 'sleep' | 'temperature' | 'settings' | 'doctorSummary' | 'profile' | 'appointment' | 'growth' | 'healthNote' | 'deleteBaby' | null;
+  openModal: (modal: 'feed' | 'diaper' | 'sleep' | 'temperature' | 'settings' | 'doctorSummary' | 'profile' | 'appointment' | 'growth' | 'healthNote' | 'deleteBaby') => void;
   closeModal: () => void;
   editingEvent: TrackerEvent | null;
   setEditingEvent: (event: TrackerEvent | null) => void;
@@ -169,7 +174,7 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const stateRefRole = useRef<MemberRole | undefined>(state.settings.memberRole);
   const [cloudBootstrap, setCloudBootstrap] = useState<'idle' | 'loading' | 'ready'>('idle');
   const [discoveredBabies, setDiscoveredBabies] = useState<DiscoveredBaby[]>([]);
-  const [forceOnboarding, setForceOnboarding] = useState(false);
+  const [babyGate, setBabyGate] = useState<'select' | 'addNewborn' | 'join' | 'tracker'>('select');
   const discoveryRanFor = useRef<string | null>(null);
 
   useEffect(() => {
@@ -189,52 +194,23 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
   useEffect(() => {
     setState(loadStateForUser(userId));
     setDiscoveredBabies([]);
-    setForceOnboarding(false);
+    setBabyGate('select');
     setCloudBootstrap('idle');
     discoveryRanFor.current = null;
   }, [userId]);
 
-  // After login: if this account has no linked baby yet, find shared babies on the server
+  // After login: always list babies linked to this account (never auto-skip the picker)
   useEffect(() => {
     if (!userId) return;
     if (discoveryRanFor.current === userId) return;
     discoveryRanFor.current = userId;
 
-    const local = loadStateForUser(userId);
-    const alreadyLinked =
-      !!local.settings.familySyncCode?.trim() &&
-      !!local.profile.name?.trim() &&
-      !!local.profile.birthDate;
-    if (alreadyLinked) {
-      setCloudBootstrap('ready');
-      return;
-    }
-
     let cancelled = false;
     setCloudBootstrap('loading');
+    setBabyGate('select');
     (async () => {
       const found = await discoverFamiliesForUser(userId, user?.email);
       if (cancelled) return;
-      if (found.length === 1) {
-        const hit = found[0];
-        const listed = (hit.state.familyMembers || []).find(
-          (m) => m.userId === userId || m.email?.toLowerCase() === user?.email?.toLowerCase()
-        );
-        setState({
-          ...hit.state,
-          settings: {
-            ...hit.state.settings,
-            familySyncCode: hit.familyCode,
-            autoSyncEnabled: true,
-            memberRole: listed?.role || hit.role,
-            lastSyncedAt: new Date().toISOString(),
-          },
-          familyMembers: hit.state.familyMembers || [],
-        });
-        setDiscoveredBabies([]);
-        setCloudBootstrap('ready');
-        return;
-      }
       setDiscoveredBabies(found);
       setCloudBootstrap('ready');
     })();
@@ -244,9 +220,21 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
   }, [userId, user?.email]);
 
-  const skipBabyDiscovery = useCallback(() => {
-    setForceOnboarding(true);
-    setDiscoveredBabies([]);
+  const showBabyPicker = useCallback(async () => {
+    setBabyGate('select');
+    if (!userId) return;
+    setCloudBootstrap('loading');
+    const found = await discoverFamiliesForUser(userId, user?.email);
+    setDiscoveredBabies(found);
+    setCloudBootstrap('ready');
+  }, [userId, user?.email]);
+
+  const startAddNewborn = useCallback(() => {
+    setBabyGate('addNewborn');
+  }, []);
+
+  const startJoinWithCode = useCallback(() => {
+    setBabyGate('join');
   }, []);
 
   // Active navigation tab (persisted in session)
@@ -305,8 +293,7 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
         },
         familyMembers: baby.state.familyMembers || [],
       });
-      setDiscoveredBabies([]);
-      setForceOnboarding(false);
+      setBabyGate('tracker');
       showToast(`Opened ${baby.state.profile.name || 'baby'} tracker`);
     },
     [userId, user?.email, showToast]
@@ -1105,7 +1092,11 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const remote = await fetchStateFromServer(clean);
         if (remote.success && remote.state) {
           // Prefer role from remote membership list when this user is already listed (e.g. seeded admin)
-          const listed = (remote.state.familyMembers || []).find((m) => m.userId === userId);
+          const listed = (remote.state.familyMembers || []).find(
+            (m) =>
+              m.userId === userId ||
+              (!!user?.email && !!m.email && m.email.toLowerCase() === user.email.toLowerCase())
+          );
           const effectiveRole: MemberRole = listed?.role || 'caregiver';
           const mergedMembers =
             members.length > 0
@@ -1134,6 +1125,7 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
           };
           setState(withRole);
           await uploadStateToServer(clean, withRole);
+          setBabyGate('tracker');
           showToast(
             effectiveRole === 'admin'
               ? 'Joined as admin — sample family loaded'
@@ -1146,13 +1138,15 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       const upload = await uploadStateToServer(clean, nextState);
       if (!upload.success) {
+        setBabyGate('tracker');
         showToast(`Saved locally; cloud sync: ${upload.error}`);
         return { success: true }; // local setup still succeeded
       }
-      showToast(opts.role === 'admin' ? 'Family created — you are the admin' : 'Joined family');
+      setBabyGate('tracker');
+      showToast(opts.role === 'admin' ? 'Baby profile created — you are the admin' : 'Joined family');
       return { success: true };
     },
-    [userId, displayName, state, showToast]
+    [userId, displayName, state, showToast, user?.email]
   );
 
   const resetToDemoData = useCallback(() => {
@@ -1172,6 +1166,42 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }));
     showToast('All records cleared');
   }, [showToast]);
+
+  const deleteBabyProfile = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
+    if (state.settings.memberRole !== 'admin') {
+      return { success: false, error: 'Only the admin can delete this baby profile' };
+    }
+
+    const code = state.settings.familySyncCode;
+    if (code) {
+      const del = await deleteFamilyFromServer(code);
+      if (!del.success) {
+        return { success: false, error: del.error || 'Failed to delete cloud baby data' };
+      }
+    }
+
+    const empty = createEmptyInitialState();
+    // Keep personal prefs (theme/units) for convenience
+    empty.settings = {
+      ...empty.settings,
+      theme: state.settings.theme,
+      bottleUnit: state.settings.bottleUnit,
+      temperatureUnit: state.settings.temperatureUnit,
+      weightUnit: state.settings.weightUnit,
+      lengthUnit: state.settings.lengthUnit,
+      headUnit: state.settings.headUnit,
+    };
+    setState(empty);
+    setDiscoveredBabies((prev) => prev.filter((b) => b.familyCode !== code?.toLowerCase()));
+    setBabyGate('select');
+    // Refresh list from server so deleted baby is gone
+    if (userId) {
+      const found = await discoverFamiliesForUser(userId, user?.email);
+      setDiscoveredBabies(found);
+    }
+    showToast('Baby profile deleted');
+    return { success: true };
+  }, [state, showToast, userId, user?.email]);
 
   const exportData = useCallback(() => {
     const pkg: ExportPackage = {
@@ -1259,13 +1289,16 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
         updateProfile,
         updateSettings,
         setupFamilyShare,
+        babyGate,
         cloudBootstrap,
         discoveredBabies,
-        forceOnboarding,
         adoptDiscoveredBaby,
-        skipBabyDiscovery,
+        showBabyPicker,
+        startAddNewborn,
+        startJoinWithCode,
         resetToDemoData,
         clearAllData,
+        deleteBabyProfile,
         exportData,
         importData,
         activeModal,

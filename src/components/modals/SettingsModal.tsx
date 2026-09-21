@@ -19,6 +19,9 @@ import {
   Copy,
   LogOut,
   Shield,
+  Mail,
+  KeyRound,
+  UserRound,
 } from 'lucide-react';
 
 export const SettingsModal: React.FC = () => {
@@ -34,10 +37,10 @@ export const SettingsModal: React.FC = () => {
     syncStatus,
     syncWithServer,
     enableSync,
-    disableSync,
     showToast,
+    showBabyPicker,
   } = useTracker();
-  const { user, displayName, signOut } = useAuth();
+  const { user, displayName, signOut, updateEmail, updatePassword, updateDisplayName } = useAuth();
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [confirmClear, setConfirmClear] = useState<boolean>(false);
@@ -48,6 +51,15 @@ export const SettingsModal: React.FC = () => {
     state.settings.familySyncCode || ''
   );
   const [isConnecting, setIsConnecting] = useState(false);
+
+  // Account edit
+  const [accountName, setAccountName] = useState(displayName || '');
+  const [accountEmail, setAccountEmail] = useState(user?.email || '');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [accountBusy, setAccountBusy] = useState<'name' | 'email' | 'password' | null>(null);
+  const [accountError, setAccountError] = useState<string | null>(null);
+  const [accountInfo, setAccountInfo] = useState<string | null>(null);
 
   const handleConnectSync = async () => {
     if (!syncCodeInput.trim()) return;
@@ -159,8 +171,8 @@ export const SettingsModal: React.FC = () => {
 
             <div className="bg-white dark:bg-charcoal-800 p-4 rounded-2xl border border-warmgray-200 dark:border-charcoal-700 space-y-3">
               <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                Connect your free Supabase cloud database to persist records on the server and keep both parents or
-                caregivers automatically in sync.
+                Share the family code so partners can join this baby. Sync keeps everyone&apos;s logs together.
+                Use <span className="font-medium">Switch baby</span> to open another newborn or add a new one.
               </p>
 
               {state.settings.familySyncCode ? (
@@ -215,14 +227,17 @@ export const SettingsModal: React.FC = () => {
                     </button>
                   </div>
 
-                  <div className="pt-2 border-t border-warmgray-100 dark:border-charcoal-700 flex items-center justify-between">
+                  <div className="pt-2 border-t border-warmgray-100 dark:border-charcoal-700 flex items-center justify-between gap-2">
                     <span className="text-xs text-slate-400">Share this code with your partner</span>
                     <button
                       type="button"
-                      onClick={disableSync}
-                      className="text-xs text-rose-500 hover:underline"
+                      onClick={() => {
+                        closeModal();
+                        showBabyPicker();
+                      }}
+                      className="text-xs font-medium text-sage-700 dark:text-sage-300 hover:underline whitespace-nowrap"
                     >
-                      Disconnect Cloud
+                      Switch baby
                     </button>
                   </div>
                 </div>
@@ -562,9 +577,18 @@ export const SettingsModal: React.FC = () => {
                   className="w-full p-3 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-white dark:bg-charcoal-800 text-rose-600 dark:text-rose-400 font-medium text-xs flex items-center justify-center space-x-2 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors min-h-[44px]"
                 >
                   <Trash2 className="w-4 h-4" />
-                  <span>Delete All Data</span>
+                  <span>Delete All Care Records</span>
                 </button>
               )}
+
+              <button
+                type="button"
+                onClick={() => openModal('deleteBaby')}
+                className="w-full p-3 rounded-xl border border-rose-300 dark:border-rose-800 bg-rose-50/50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-300 font-medium text-xs flex items-center justify-center space-x-2 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors min-h-[44px]"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Delete Baby Profile…</span>
+              </button>
             </div>
           </div>
 
@@ -573,16 +597,141 @@ export const SettingsModal: React.FC = () => {
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               Account
             </label>
-            <div className="p-3 rounded-xl bg-white dark:bg-charcoal-800 border border-warmgray-200 dark:border-charcoal-700 text-xs text-slate-600 dark:text-slate-300 space-y-2">
-              <p>
-                Signed in as{' '}
-                <span className="font-semibold text-slate-900 dark:text-slate-100">
-                  {displayName || user?.email}
-                </span>
-              </p>
+            <div className="p-4 rounded-xl bg-white dark:bg-charcoal-800 border border-warmgray-200 dark:border-charcoal-700 text-xs text-slate-600 dark:text-slate-300 space-y-4">
               <p className="text-[11px] text-slate-400">
-                Sign out keeps your records on this device. Sign back in with the same email to continue.
+                Update how you appear and sign in. Sign out keeps baby records on this device.
               </p>
+
+              {/* Display name */}
+              <div className="space-y-1.5">
+                <label className="flex items-center gap-1.5 text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                  <UserRound className="w-3.5 h-3.5" />
+                  Display name
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={accountName}
+                    onChange={(e) => setAccountName(e.target.value)}
+                    className="flex-1 px-3 py-2 text-sm rounded-xl border border-warmgray-300 dark:border-charcoal-700 bg-warmgray-50 dark:bg-charcoal-850 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sage-500 min-h-[44px]"
+                  />
+                  <button
+                    type="button"
+                    disabled={accountBusy !== null || accountName.trim() === displayName}
+                    onClick={async () => {
+                      setAccountError(null);
+                      setAccountInfo(null);
+                      setAccountBusy('name');
+                      const res = await updateDisplayName(accountName);
+                      setAccountBusy(null);
+                      if (res.error) setAccountError(res.error);
+                      else showToast('Display name updated');
+                    }}
+                    className="px-3 py-2 rounded-xl bg-sage-600 hover:bg-sage-700 text-white text-xs font-medium min-h-[44px] disabled:opacity-50"
+                  >
+                    {accountBusy === 'name' ? '…' : 'Save'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Email */}
+              <div className="space-y-1.5">
+                <label className="flex items-center gap-1.5 text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                  <Mail className="w-3.5 h-3.5" />
+                  Email
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="email"
+                    value={accountEmail}
+                    onChange={(e) => setAccountEmail(e.target.value)}
+                    autoComplete="email"
+                    className="flex-1 px-3 py-2 text-sm rounded-xl border border-warmgray-300 dark:border-charcoal-700 bg-warmgray-50 dark:bg-charcoal-850 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sage-500 min-h-[44px]"
+                  />
+                  <button
+                    type="button"
+                    disabled={
+                      accountBusy !== null ||
+                      accountEmail.trim().toLowerCase() === (user?.email || '').toLowerCase()
+                    }
+                    onClick={async () => {
+                      setAccountError(null);
+                      setAccountInfo(null);
+                      setAccountBusy('email');
+                      const res = await updateEmail(accountEmail);
+                      setAccountBusy(null);
+                      if (res.error) setAccountError(res.error);
+                      else {
+                        showToast('Email update requested');
+                        if (res.info) setAccountInfo(res.info);
+                      }
+                    }}
+                    className="px-3 py-2 rounded-xl bg-sage-600 hover:bg-sage-700 text-white text-xs font-medium min-h-[44px] disabled:opacity-50"
+                  >
+                    {accountBusy === 'email' ? '…' : 'Save'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Password */}
+              <div className="space-y-1.5">
+                <label className="flex items-center gap-1.5 text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                  <KeyRound className="w-3.5 h-3.5" />
+                  New password
+                </label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="At least 6 characters"
+                  autoComplete="new-password"
+                  className="w-full px-3 py-2 text-sm rounded-xl border border-warmgray-300 dark:border-charcoal-700 bg-warmgray-50 dark:bg-charcoal-850 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sage-500 min-h-[44px]"
+                />
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm new password"
+                  autoComplete="new-password"
+                  className="w-full px-3 py-2 text-sm rounded-xl border border-warmgray-300 dark:border-charcoal-700 bg-warmgray-50 dark:bg-charcoal-850 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sage-500 min-h-[44px]"
+                />
+                <button
+                  type="button"
+                  disabled={accountBusy !== null || !newPassword}
+                  onClick={async () => {
+                    setAccountError(null);
+                    setAccountInfo(null);
+                    if (newPassword !== confirmPassword) {
+                      setAccountError('Passwords do not match');
+                      return;
+                    }
+                    setAccountBusy('password');
+                    const res = await updatePassword(newPassword);
+                    setAccountBusy(null);
+                    if (res.error) setAccountError(res.error);
+                    else {
+                      setNewPassword('');
+                      setConfirmPassword('');
+                      showToast('Password updated');
+                    }
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-sage-600 hover:bg-sage-700 text-white text-xs font-medium min-h-[44px] disabled:opacity-50"
+                >
+                  {accountBusy === 'password' ? 'Updating…' : 'Update password'}
+                </button>
+              </div>
+
+              {accountError && (
+                <p className="text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 rounded-xl">
+                  {accountError}
+                </p>
+              )}
+              {accountInfo && (
+                <p className="text-xs text-sage-700 dark:text-sage-300 bg-sage-50 dark:bg-sage-950/40 px-3 py-2 rounded-xl">
+                  {accountInfo}
+                </p>
+              )}
+
               <button
                 type="button"
                 onClick={async () => {

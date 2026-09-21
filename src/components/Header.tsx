@@ -5,7 +5,7 @@ import { calculateBabyAge, formatWeekdayDate } from '../utils/units';
 import { Settings, Baby, Moon, Sun, Cloud, RefreshCw } from 'lucide-react';
 
 export const Header: React.FC = () => {
-  const { state, activeTab, openModal, updateSettings, syncStatus } = useTracker();
+  const { state, activeTab, openModal, updateSettings, syncStatus, showBabyPicker } = useTracker();
   const todayStr = formatWeekdayDate(new Date().toISOString());
   const babyName = state.profile.name || 'Baby';
   const babyAge = calculateBabyAge(state.profile.birthDate);
@@ -53,12 +53,13 @@ export const Header: React.FC = () => {
 
         {/* Right: Baby Chip + Theme Toggle + Settings */}
         <div className="flex items-center space-x-1.5">
-          {/* Baby Profile Chip */}
+          {/* Baby chip — tap to switch / add another */}
           <button
             type="button"
-            onClick={() => openModal('profile')}
+            onClick={() => showBabyPicker()}
             className="flex items-center space-x-1.5 py-1.5 px-3 rounded-full bg-white dark:bg-charcoal-800 border border-warmgray-200 dark:border-charcoal-700 text-slate-700 dark:text-slate-200 hover:border-sage-400 transition-all text-xs font-medium shadow-2xs min-h-[38px] max-w-[140px]"
-            aria-label={`Baby profile: ${babyName}${babyAge ? `, ${babyAge}` : ''}`}
+            aria-label={`Switch baby. Current: ${babyName}${babyAge ? `, ${babyAge}` : ''}`}
+            title="Switch baby or add newborn"
           >
             <Baby className="w-3.5 h-3.5 text-sage-600 dark:text-sage-400 flex-shrink-0" />
             <span className="truncate">{babyName}</span>

@@ -11,6 +11,9 @@ interface AuthContextType {
   signUp: (email: string, password: string, displayName?: string) => Promise<{ error?: string }>;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
+  updateEmail: (email: string) => Promise<{ error?: string; info?: string }>;
+  updatePassword: (password: string) => Promise<{ error?: string }>;
+  updateDisplayName: (name: string) => Promise<{ error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -72,6 +75,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await supabase.auth.signOut();
   }, []);
 
+  const updateEmail = useCallback(async (email: string) => {
+    const next = email.trim().toLowerCase();
+    if (!next || !next.includes('@')) {
+      return { error: 'Enter a valid email address' };
+    }
+    const { data, error } = await supabase.auth.updateUser({ email: next });
+    if (error) return { error: error.message };
+    if (data.user) setUser(data.user);
+    return {
+      info: 'If email confirmation is enabled, check your inbox (old and new) to confirm the change.',
+    };
+  }, []);
+
+  const updatePassword = useCallback(async (password: string) => {
+    if (password.length < 6) {
+      return { error: 'Password must be at least 6 characters' };
+    }
+    const { data, error } = await supabase.auth.updateUser({ password });
+    if (error) return { error: error.message };
+    if (data.user) setUser(data.user);
+    return {};
+  }, []);
+
+  const updateDisplayName = useCallback(async (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return { error: 'Display name cannot be empty' };
+    const { data, error } = await supabase.auth.updateUser({
+      data: { display_name: trimmed },
+    });
+    if (error) return { error: error.message };
+    if (data.user) setUser(data.user);
+    return {};
+  }, []);
+
   const displayName = useMemo(() => {
     if (!user) return '';
     const meta = user.user_metadata?.display_name;
@@ -80,8 +117,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [user]);
 
   const value = useMemo(
-    () => ({ user, session, loading, displayName, signUp, signIn, signOut }),
-    [user, session, loading, displayName, signUp, signIn, signOut]
+    () => ({
+      user,
+      session,
+      loading,
+      displayName,
+      signUp,
+      signIn,
+      signOut,
+      updateEmail,
+      updatePassword,
+      updateDisplayName,
+    }),
+    [
+      user,
+      session,
+      loading,
+      displayName,
+      signUp,
+      signIn,
+      signOut,
+      updateEmail,
+      updatePassword,
+      updateDisplayName,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

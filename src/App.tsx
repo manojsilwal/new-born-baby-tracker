@@ -23,25 +23,23 @@ import { BabyProfileModal } from './components/modals/BabyProfileModal';
 import { AppointmentModal } from './components/modals/AppointmentModal';
 import { GrowthRecordModal } from './components/modals/GrowthRecordModal';
 import { HealthNoteModal } from './components/modals/HealthNoteModal';
-
-function needsOnboarding(profileName: string, birthDate: string, familyCode?: string): boolean {
-  return !profileName.trim() || !birthDate || !familyCode?.trim();
-}
+import { DeleteBabyModal } from './components/modals/DeleteBabyModal';
 
 const AppContent: React.FC = () => {
   const { user, loading } = useAuth();
   const {
     activeTab,
     activeModal,
-    state,
     cloudBootstrap,
     discoveredBabies,
-    forceOnboarding,
+    babyGate,
     adoptDiscoveredBaby,
-    skipBabyDiscovery,
+    startAddNewborn,
+    startJoinWithCode,
+    showBabyPicker,
   } = useTracker();
 
-  if (loading || (user && cloudBootstrap === 'loading')) {
+  if (loading || (user && cloudBootstrap === 'loading' && babyGate === 'select')) {
     return (
       <div className="min-h-screen bg-warmgray-100 dark:bg-charcoal-900 flex items-center justify-center">
         <p className="text-sm text-slate-500 dark:text-slate-400">
@@ -55,25 +53,23 @@ const AppContent: React.FC = () => {
     return <AuthScreen />;
   }
 
-  const onboard = needsOnboarding(
-    state.profile.name,
-    state.profile.birthDate,
-    state.settings.familySyncCode
-  );
-
-  // Linked babies found for this email — pick one (or auto-adopted if only one)
-  if (onboard && !forceOnboarding && discoveredBabies.length > 0) {
+  if (babyGate === 'select') {
     return (
       <BabySelectScreen
         babies={discoveredBabies}
         onSelect={adoptDiscoveredBaby}
-        onCreateNew={skipBabyDiscovery}
+        onAddNewborn={startAddNewborn}
+        onJoinWithCode={startJoinWithCode}
       />
     );
   }
 
-  if (onboard) {
-    return <OnboardingScreen />;
+  if (babyGate === 'addNewborn') {
+    return <OnboardingScreen intent="create" onBack={showBabyPicker} />;
+  }
+
+  if (babyGate === 'join') {
+    return <OnboardingScreen intent="join" onBack={showBabyPicker} />;
   }
 
   return (
@@ -100,6 +96,7 @@ const AppContent: React.FC = () => {
         {activeModal === 'appointment' && <AppointmentModal />}
         {activeModal === 'growth' && <GrowthRecordModal />}
         {activeModal === 'healthNote' && <HealthNoteModal />}
+        {activeModal === 'deleteBaby' && <DeleteBabyModal />}
       </div>
     </div>
   );
