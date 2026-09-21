@@ -8,6 +8,7 @@ import {
   mlToOz,
   ozToMl,
   getConvertedVolumeSubtext,
+  toDatetimeLocalValue,
 } from '../../utils/units';
 import {
   X,
@@ -68,10 +69,9 @@ export const FeedModal: React.FC = () => {
   const activeTotals = getActiveNursingTotals(activeNursing, nowTick);
 
   // Manual Nursing form state
-  const [nursingStartTime, setNursingStartTime] = useState<string>(() => {
-    if (existingFeed?.startTime) return existingFeed.startTime.slice(0, 16);
-    return new Date().toISOString().slice(0, 16);
-  });
+  const [nursingStartTime, setNursingStartTime] = useState<string>(() =>
+    toDatetimeLocalValue(existingFeed?.startTime || new Date())
+  );
   const [leftMinutes, setLeftMinutes] = useState<number>(() => {
     if (existingFeed?.leftDurationSeconds) return Math.round(existingFeed.leftDurationSeconds / 60);
     return 10;
@@ -83,10 +83,9 @@ export const FeedModal: React.FC = () => {
   const [nursingNote, setNursingNote] = useState<string>(existingFeed?.note || '');
 
   // Bottle form state
-  const [bottleStartTime, setBottleStartTime] = useState<string>(() => {
-    if (existingFeed?.startTime) return existingFeed.startTime.slice(0, 16);
-    return new Date().toISOString().slice(0, 16);
-  });
+  const [bottleStartTime, setBottleStartTime] = useState<string>(() =>
+    toDatetimeLocalValue(existingFeed?.startTime || new Date())
+  );
   const [bottleType, setBottleType] = useState<BottleType>(() => {
     if (existingFeed?.bottleType) return existingFeed.bottleType;
     return 'expressed';
@@ -485,7 +484,7 @@ export const FeedModal: React.FC = () => {
                         type="datetime-local"
                         value={nursingStartTime}
                         onChange={(e) => setNursingStartTime(e.target.value)}
-                        className="w-full px-3 py-2 text-sm rounded-xl border border-warmgray-300 dark:border-charcoal-700 bg-white dark:bg-charcoal-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sage-500 min-h-[44px]"
+                        className="w-full px-3 py-2 pr-10 text-sm rounded-xl border border-warmgray-300 dark:border-charcoal-700 bg-white dark:bg-charcoal-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sage-500 min-h-[44px] [color-scheme:light] dark:[color-scheme:dark]"
                         required
                       />
                       <Clock className="w-4 h-4 absolute right-3 top-3.5 text-slate-400 pointer-events-none" />
@@ -590,7 +589,7 @@ export const FeedModal: React.FC = () => {
                     onClick={() => setBottleType('expressed')}
                     className={`py-2.5 px-3 rounded-xl text-sm font-medium border flex items-center justify-center space-x-2 transition-all min-h-[44px] ${
                       bottleType === 'expressed'
-                        ? 'border-sage-500 bg-sage-50/80 dark:bg-sage-950/40 text-sage-800 dark:text-sage-200'
+                        ? 'border-sage-500 bg-sage-100 dark:bg-sage-900 text-sage-900 dark:text-sage-100 font-semibold'
                         : 'border-warmgray-200 dark:border-charcoal-700 bg-white dark:bg-charcoal-800 text-slate-600 dark:text-slate-400'
                     }`}
                   >
@@ -601,7 +600,7 @@ export const FeedModal: React.FC = () => {
                     onClick={() => setBottleType('formula')}
                     className={`py-2.5 px-3 rounded-xl text-sm font-medium border flex items-center justify-center space-x-2 transition-all min-h-[44px] ${
                       bottleType === 'formula'
-                        ? 'border-sage-500 bg-sage-50/80 dark:bg-sage-950/40 text-sage-800 dark:text-sage-200'
+                        ? 'border-sage-500 bg-sage-100 dark:bg-sage-900 text-sage-900 dark:text-sage-100 font-semibold'
                         : 'border-warmgray-200 dark:border-charcoal-700 bg-white dark:bg-charcoal-800 text-slate-600 dark:text-slate-400'
                     }`}
                   >
@@ -694,7 +693,7 @@ export const FeedModal: React.FC = () => {
                       onClick={() => setVolumeInput(amt)}
                       className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-all min-h-[36px] whitespace-nowrap ${
                         volumeInput === amt
-                          ? 'border-sage-500 bg-sage-50 dark:bg-sage-950/40 text-sage-800 dark:text-sage-200 font-semibold'
+                          ? 'border-sage-500 bg-sage-100 dark:bg-sage-900 text-sage-900 dark:text-sage-100 font-semibold'
                           : 'border-warmgray-200 dark:border-charcoal-700 bg-white dark:bg-charcoal-800 text-slate-600 dark:text-slate-400'
                       }`}
                     >
@@ -714,7 +713,7 @@ export const FeedModal: React.FC = () => {
                     type="datetime-local"
                     value={bottleStartTime}
                     onChange={(e) => setBottleStartTime(e.target.value)}
-                    className="w-full px-3 py-2 text-sm rounded-xl border border-warmgray-300 dark:border-charcoal-700 bg-white dark:bg-charcoal-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sage-500 min-h-[44px]"
+                    className="w-full px-3 py-2 pr-10 text-sm rounded-xl border border-warmgray-300 dark:border-charcoal-700 bg-white dark:bg-charcoal-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sage-500 min-h-[44px] [color-scheme:light] dark:[color-scheme:dark]"
                     required
                   />
                   <Clock className="w-4 h-4 absolute right-3 top-3.5 text-slate-400 pointer-events-none" />

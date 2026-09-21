@@ -169,6 +169,14 @@ export function formatDateTime(isoString: string): string {
   }
 }
 
+/** Local `YYYY-MM-DDTHH:mm` for `<input type="datetime-local">` (not UTC). */
+export function toDatetimeLocalValue(date: Date | string = new Date()): string {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  const safe = Number.isNaN(d.getTime()) ? new Date() : d;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${safe.getFullYear()}-${pad(safe.getMonth() + 1)}-${pad(safe.getDate())}T${pad(safe.getHours())}:${pad(safe.getMinutes())}`;
+}
+
 export function formatRelativeTime(isoString: string, now: Date = new Date()): string {
   try {
     const then = new Date(isoString);

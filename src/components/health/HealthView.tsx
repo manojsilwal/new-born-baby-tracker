@@ -340,20 +340,20 @@ export const HealthView: React.FC = () => {
 
                   {/* 3 Metric Cards */}
                   <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                    <div className="p-2.5 rounded-2xl bg-warmgray-50 dark:bg-charcoal-750 border border-warmgray-100 dark:border-charcoal-700">
-                      <span className="text-[10px] text-slate-400 block font-medium">Weight</span>
+                    <div className="p-2.5 rounded-2xl bg-warmgray-100 dark:bg-charcoal-700 border border-warmgray-200 dark:border-charcoal-700">
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-medium">Weight</span>
                       <span className="font-mono font-bold text-slate-900 dark:text-slate-100 text-sm">
                         {rec.weightGrams ? formatWeight(rec.weightGrams, state.settings.weightUnit) : 'N/A'}
                       </span>
                       {rec.weightDeltaGrams !== null && (
-                        <span className={`text-[10px] block font-mono font-medium ${rec.weightDeltaGrams >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600'}`}>
+                        <span className={`text-[10px] block font-mono font-medium ${rec.weightDeltaGrams >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
                           {rec.weightDeltaGrams >= 0 ? `+${rec.weightDeltaGrams}g` : `${rec.weightDeltaGrams}g`}
                         </span>
                       )}
                     </div>
 
-                    <div className="p-2.5 rounded-2xl bg-warmgray-50 dark:bg-charcoal-750 border border-warmgray-100 dark:border-charcoal-700">
-                      <span className="text-[10px] text-slate-400 block font-medium">Length</span>
+                    <div className="p-2.5 rounded-2xl bg-warmgray-100 dark:bg-charcoal-700 border border-warmgray-200 dark:border-charcoal-700">
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-medium">Length</span>
                       <span className="font-mono font-bold text-slate-900 dark:text-slate-100 text-sm">
                         {rec.lengthCm ? formatLength(rec.lengthCm, state.settings.lengthUnit) : 'N/A'}
                       </span>
@@ -364,12 +364,12 @@ export const HealthView: React.FC = () => {
                       )}
                     </div>
 
-                    <div className="p-2.5 rounded-2xl bg-warmgray-50 dark:bg-charcoal-750 border border-warmgray-100 dark:border-charcoal-700">
-                      <span className="text-[10px] text-slate-400 block font-medium">Head Circ</span>
+                    <div className="p-2.5 rounded-2xl bg-warmgray-100 dark:bg-charcoal-700 border border-warmgray-200 dark:border-charcoal-700">
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-medium">Head Circ</span>
                       <span className="font-mono font-bold text-slate-900 dark:text-slate-100 text-sm">
                         {rec.headCircumferenceCm ? formatLength(rec.headCircumferenceCm, state.settings.headUnit) : 'N/A'}
                       </span>
-                      <span className="text-[10px] text-slate-400 block">Infant</span>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 block">Infant</span>
                     </div>
                   </div>
 
@@ -478,7 +478,7 @@ export const HealthView: React.FC = () => {
                     </div>
                   </div>
 
-                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-warmgray-50/70 dark:bg-charcoal-750 p-3 rounded-2xl">
+                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-warmgray-50/70 dark:bg-charcoal-700 p-3 rounded-2xl">
                     {note.details}
                   </p>
                 </div>
