@@ -448,6 +448,12 @@ export const TodayView: React.FC = () => {
                         <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5 font-medium">
                           {details}
                         </p>
+                        {event.recordedBy && (
+                          <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                            Recorded by {event.recordedBy.displayName}
+                            {event.recordedBy.role === 'admin' ? ' · Admin' : ''}
+                          </p>
+                        )}
                         {event.note && (
                           <p className="text-[11px] text-slate-400 dark:text-slate-500 italic mt-1 bg-warmgray-50 dark:bg-charcoal-700/40 px-2 py-1 rounded-lg">
                             "{event.note}"

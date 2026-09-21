@@ -4,6 +4,22 @@ export type BottleType = 'expressed' | 'formula';
 export type FeedType = 'nursing' | 'bottle';
 export type NursingSide = 'left' | 'right';
 
+export type MemberRole = 'admin' | 'caregiver';
+
+/** Who logged this care entry (shown in UI; used for admin-wins dedupe). */
+export interface RecordedBy {
+  userId: string;
+  displayName: string;
+  role: MemberRole;
+}
+
+export interface FamilyMember {
+  userId: string;
+  displayName: string;
+  role: MemberRole;
+  email?: string;
+}
+
 export interface FeedingEvent {
   id: string;
   type: 'feeding';
@@ -19,6 +35,7 @@ export interface FeedingEvent {
   volumeMl?: number; // Canonical storage in milliliters
   bottleType?: BottleType;
   note?: string;
+  recordedBy?: RecordedBy;
   createdAt: string;
   updatedAt: string;
 }
@@ -38,6 +55,7 @@ export interface DiaperEvent {
   poopColor?: PoopColor;
   alertAcknowledged?: boolean;
   note?: string;
+  recordedBy?: RecordedBy;
   createdAt: string;
   updatedAt: string;
 }
@@ -49,6 +67,7 @@ export interface SleepEvent {
   endTime: string; // ISO string
   durationSeconds: number;
   note?: string;
+  recordedBy?: RecordedBy;
   createdAt: string;
   updatedAt: string;
 }
@@ -60,6 +79,7 @@ export interface TemperatureEvent {
   temperatureCelsius: number; // Canonical storage in Celsius
   alertAcknowledged?: boolean;
   note?: string;
+  recordedBy?: RecordedBy;
   createdAt: string;
   updatedAt: string;
 }
@@ -81,6 +101,7 @@ export interface Appointment {
   questions: string[];
   providerInstructions?: string;
   isCompleted: boolean;
+  recordedBy?: RecordedBy;
   createdAt: string;
   updatedAt: string;
 }
@@ -92,6 +113,7 @@ export interface GrowthRecord {
   lengthCm?: number; // Canonical storage in cm
   headCircumferenceCm?: number; // Canonical storage in cm
   notes?: string;
+  recordedBy?: RecordedBy;
   createdAt: string;
   updatedAt: string;
 }
@@ -104,6 +126,7 @@ export interface HealthNote {
   category: HealthNoteCategory;
   title: string;
   details: string;
+  recordedBy?: RecordedBy;
   createdAt: string;
   updatedAt: string;
 }
@@ -142,6 +165,10 @@ export interface AppSettings {
   familySyncCode?: string;
   autoSyncEnabled?: boolean;
   lastSyncedAt?: string;
+  /** Active shared baby id (normalized schema). */
+  babyId?: string;
+  /** Current user's role on the active baby. Exactly one admin per baby. */
+  memberRole?: MemberRole;
 }
 
 export interface AppState {
@@ -153,6 +180,8 @@ export interface AppState {
   growthRecords: GrowthRecord[];
   healthNotes: HealthNote[];
   activeTimers: ActiveTimers;
+  /** Caregivers sharing this baby (includes admin). */
+  familyMembers?: FamilyMember[];
 }
 
 export interface ExportPackage {

@@ -22,9 +22,43 @@ import {
   uploadStateToServer,
   fetchStateFromServer,
   mergeStates,
+  discoverFamiliesForUser,
 } from '../utils/supabaseSync';
+import {
+  createEmptyInitialState,
+  userStorageKey,
+} from '../utils/emptyState';
+import { resolveDuplicateEvents } from '../utils/eventMerge';
+import { useAuth } from './AuthContext';
+import { FamilyMember, MemberRole, RecordedBy } from '../types/tracker';
+import type { DiscoveredBaby } from '../components/auth/BabySelectScreen';
 
 export const STORAGE_KEY = 'newborn-tracker:v1';
+
+function parseStoredState(raw: string | null): AppState | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.schemaVersion === 1 && Array.isArray(parsed.events)) {
+      return parsed as AppState;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+/** Load per-user state. Does not steal legacy demo data — cloud discovery runs after login. */
+function loadStateForUser(userId: string | undefined): AppState {
+  if (!userId) {
+    return createEmptyInitialState();
+  }
+
+  const perUser = parseStoredState(localStorage.getItem(userStorageKey(userId)));
+  if (perUser) return perUser;
+
+  return createEmptyInitialState();
+}
 
 export interface ToastData {
   id: string;
@@ -90,6 +124,21 @@ interface TrackerContextType {
   // Settings & Profile
   updateProfile: (profile: Partial<BabyProfile>) => void;
   updateSettings: (settings: Partial<AppSettings>) => void;
+  /** Complete family setup as admin (create) or caregiver (join). */
+  setupFamilyShare: (opts: {
+    role: MemberRole;
+    inviteCode: string;
+    babyId?: string;
+    babyName: string;
+    birthDate: string;
+    members?: FamilyMember[];
+  }) => Promise<{ success: boolean; error?: string }>;
+  /** Cloud babies linked to this login (after discovery). */
+  cloudBootstrap: 'idle' | 'loading' | 'ready';
+  discoveredBabies: DiscoveredBaby[];
+  forceOnboarding: boolean;
+  adoptDiscoveredBaby: (baby: DiscoveredBaby) => void;
+  skipBabyDiscovery: () => void;
   resetToDemoData: () => void;
   clearAllData: () => void;
   exportData: () => void;
@@ -112,27 +161,93 @@ interface TrackerContextType {
 const TrackerContext = createContext<TrackerContextType | undefined>(undefined);
 
 export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // 1. Initial State from localStorage or mock
-  const [state, setState] = useState<AppState>(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed && parsed.schemaVersion === 1 && Array.isArray(parsed.events)) {
-          return parsed;
-        }
+  const { user, displayName } = useAuth();
+  const userId = user?.id;
+
+  // 1. Initial State from per-user localStorage
+  const [state, setState] = useState<AppState>(() => loadStateForUser(userId));
+  const stateRefRole = useRef<MemberRole | undefined>(state.settings.memberRole);
+  const [cloudBootstrap, setCloudBootstrap] = useState<'idle' | 'loading' | 'ready'>('idle');
+  const [discoveredBabies, setDiscoveredBabies] = useState<DiscoveredBaby[]>([]);
+  const [forceOnboarding, setForceOnboarding] = useState(false);
+  const discoveryRanFor = useRef<string | null>(null);
+
+  useEffect(() => {
+    stateRefRole.current = state.settings.memberRole;
+  }, [state.settings.memberRole]);
+
+  const buildRecordedBy = useCallback((): RecordedBy | undefined => {
+    if (!userId) return undefined;
+    return {
+      userId,
+      displayName: displayName || 'Caregiver',
+      role: (stateRefRole.current || 'caregiver') as MemberRole,
+    };
+  }, [userId, displayName]);
+
+  // Reload when auth user changes
+  useEffect(() => {
+    setState(loadStateForUser(userId));
+    setDiscoveredBabies([]);
+    setForceOnboarding(false);
+    setCloudBootstrap('idle');
+    discoveryRanFor.current = null;
+  }, [userId]);
+
+  // After login: if this account has no linked baby yet, find shared babies on the server
+  useEffect(() => {
+    if (!userId) return;
+    if (discoveryRanFor.current === userId) return;
+    discoveryRanFor.current = userId;
+
+    const local = loadStateForUser(userId);
+    const alreadyLinked =
+      !!local.settings.familySyncCode?.trim() &&
+      !!local.profile.name?.trim() &&
+      !!local.profile.birthDate;
+    if (alreadyLinked) {
+      setCloudBootstrap('ready');
+      return;
+    }
+
+    let cancelled = false;
+    setCloudBootstrap('loading');
+    (async () => {
+      const found = await discoverFamiliesForUser(userId, user?.email);
+      if (cancelled) return;
+      if (found.length === 1) {
+        const hit = found[0];
+        const listed = (hit.state.familyMembers || []).find(
+          (m) => m.userId === userId || m.email?.toLowerCase() === user?.email?.toLowerCase()
+        );
+        setState({
+          ...hit.state,
+          settings: {
+            ...hit.state.settings,
+            familySyncCode: hit.familyCode,
+            autoSyncEnabled: true,
+            memberRole: listed?.role || hit.role,
+            lastSyncedAt: new Date().toISOString(),
+          },
+          familyMembers: hit.state.familyMembers || [],
+        });
+        setDiscoveredBabies([]);
+        setCloudBootstrap('ready');
+        return;
       }
-    } catch (err) {
-      console.warn('Failed to load state from localStorage, falling back to mock data', err);
-    }
-    const initial = createInitialMockState();
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
-    } catch {
-      // Storage might be restricted
-    }
-    return initial;
-  });
+      setDiscoveredBabies(found);
+      setCloudBootstrap('ready');
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, user?.email]);
+
+  const skipBabyDiscovery = useCallback(() => {
+    setForceOnboarding(true);
+    setDiscoveredBabies([]);
+  }, []);
 
   // Active navigation tab (persisted in session)
   const [activeTab, setActiveTabState] = useState<'today' | 'history' | 'health'>(() => {
@@ -174,6 +289,29 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setToast(null);
   }, []);
 
+  const adoptDiscoveredBaby = useCallback(
+    (baby: DiscoveredBaby) => {
+      const listed = (baby.state.familyMembers || []).find(
+        (m) => m.userId === userId || m.email?.toLowerCase() === user?.email?.toLowerCase()
+      );
+      setState({
+        ...baby.state,
+        settings: {
+          ...baby.state.settings,
+          familySyncCode: baby.familyCode,
+          autoSyncEnabled: true,
+          memberRole: listed?.role || baby.role,
+          lastSyncedAt: new Date().toISOString(),
+        },
+        familyMembers: baby.state.familyMembers || [],
+      });
+      setDiscoveredBabies([]);
+      setForceOnboarding(false);
+      showToast(`Opened ${baby.state.profile.name || 'baby'} tracker`);
+    },
+    [userId, user?.email, showToast]
+  );
+
   // Modal triggers
   const [activeModal, setActiveModal] = useState<TrackerContextType['activeModal']>(null);
   const [editingEvent, setEditingEvent] = useState<TrackerEvent | null>(null);
@@ -194,14 +332,15 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
   const syncTimeoutRef = useRef<number | null>(null);
 
-  // 2. Persist State to localStorage whenever changed
+  // 2. Persist State to per-user localStorage whenever changed (never touch other users' keys)
   useEffect(() => {
+    if (!userId) return;
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      localStorage.setItem(userStorageKey(userId), JSON.stringify(state));
     } catch (e) {
       console.error('Error saving app state to localStorage', e);
     }
-  }, [state]);
+  }, [state, userId]);
 
   // 3. Theme Synchronization
   useEffect(() => {
@@ -347,16 +486,18 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
     (eventData: NewTrackerEvent): string => {
       const id = generateUUID();
       const now = new Date().toISOString();
+      const recordedBy = buildRecordedBy();
       const newEvent: TrackerEvent = {
         ...eventData,
         id,
+        recordedBy: eventData.recordedBy || recordedBy,
         createdAt: now,
         updatedAt: now,
       } as TrackerEvent;
 
       setState((prev) => ({
         ...prev,
-        events: [newEvent, ...prev.events],
+        events: resolveDuplicateEvents([newEvent, ...prev.events]),
       }));
 
       // Set up undo
@@ -369,7 +510,7 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       return id;
     },
-    [showToast]
+    [showToast, buildRecordedBy]
   );
 
   const updateEvent = useCallback(
@@ -426,13 +567,14 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
       hasPee: true,
       peeColor: 'pale-yellow',
       hasPoop: false,
+      recordedBy: buildRecordedBy(),
       createdAt: now,
       updatedAt: now,
     };
 
     setState((prev) => ({
       ...prev,
-      events: [event, ...prev.events],
+      events: resolveDuplicateEvents([event, ...prev.events]),
     }));
 
     showToast('Wet diaper logged', () => {
@@ -441,7 +583,7 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
         events: prev.events.filter((e) => e.id !== id),
       }));
     });
-  }, [showToast]);
+  }, [showToast, buildRecordedBy]);
 
   const quickBottleFeed = useCallback(
     (volumeMl: number, bottleType: BottleType = 'expressed') => {
@@ -455,13 +597,14 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
         endTime: now,
         volumeMl,
         bottleType,
+        recordedBy: buildRecordedBy(),
         createdAt: now,
         updatedAt: now,
       };
 
       setState((prev) => ({
         ...prev,
-        events: [event, ...prev.events],
+        events: resolveDuplicateEvents([event, ...prev.events]),
       }));
 
       const displayVol = state.settings.bottleUnit === 'oz' ? `${Math.round((volumeMl / 29.5735) * 10) / 10} oz` : `${Math.round(volumeMl)} ml`;
@@ -472,7 +615,7 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }));
       });
     },
-    [state.settings.bottleUnit, showToast]
+    [showToast, buildRecordedBy, state.settings.bottleUnit]
   );
 
   // ================= NURSING TIMER =================
@@ -606,13 +749,14 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
         totalDurationSeconds: totals.totalSeconds,
         lastActiveSide: current.activeSide || 'left',
         note: note?.trim() || undefined,
+        recordedBy: buildRecordedBy(),
         createdAt: createdIso,
         updatedAt: createdIso,
       };
 
       setState((prev) => ({
         ...prev,
-        events: [newEvent, ...prev.events],
+        events: resolveDuplicateEvents([newEvent, ...prev.events]),
         activeTimers: {
           ...prev.activeTimers,
           nursing: null,
@@ -626,7 +770,7 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }));
       });
     },
-    [state.activeTimers.nursing, showToast]
+    [state.activeTimers.nursing, showToast, buildRecordedBy]
   );
 
   const cancelNursing = useCallback(() => {
@@ -680,13 +824,14 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
         endTime,
         durationSeconds,
         note: note?.trim() || undefined,
+        recordedBy: buildRecordedBy(),
         createdAt: nowIso,
         updatedAt: nowIso,
       };
 
       setState((prev) => ({
         ...prev,
-        events: [newEvent, ...prev.events],
+        events: resolveDuplicateEvents([newEvent, ...prev.events]),
         activeTimers: {
           ...prev.activeTimers,
           sleep: null,
@@ -701,7 +846,7 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }));
       });
     },
-    [state.activeTimers.sleep, showToast]
+    [state.activeTimers.sleep, showToast, buildRecordedBy]
   );
 
   const cancelSleep = useCallback(() => {
@@ -897,6 +1042,119 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }));
   }, []);
 
+  const setupFamilyShare = useCallback(
+    async (opts: {
+      role: MemberRole;
+      inviteCode: string;
+      babyId?: string;
+      babyName: string;
+      birthDate: string;
+      members?: FamilyMember[];
+    }): Promise<{ success: boolean; error?: string }> => {
+      const clean = opts.inviteCode.trim().toLowerCase();
+      if (!clean) return { success: false, error: 'Family code is required' };
+
+      const selfMember: FamilyMember | null = userId
+        ? {
+            userId,
+            displayName: displayName || 'Caregiver',
+            role: opts.role,
+          }
+        : null;
+
+      const members = opts.members?.length
+        ? opts.members
+        : selfMember
+          ? [selfMember]
+          : [];
+
+      setState((prev) => ({
+        ...prev,
+        profile: {
+          name: opts.babyName.trim() || prev.profile.name,
+          birthDate: opts.birthDate || prev.profile.birthDate,
+        },
+        settings: {
+          ...prev.settings,
+          familySyncCode: clean,
+          autoSyncEnabled: true,
+          babyId: opts.babyId || prev.settings.babyId,
+          memberRole: opts.role,
+        },
+        familyMembers: members,
+      }));
+
+      // Sync via existing family blob (preserves data; admin-wins merge on pull)
+      const nextState: AppState = {
+        ...state,
+        profile: {
+          name: opts.babyName.trim() || state.profile.name,
+          birthDate: opts.birthDate || state.profile.birthDate,
+        },
+        settings: {
+          ...state.settings,
+          familySyncCode: clean,
+          autoSyncEnabled: true,
+          babyId: opts.babyId || state.settings.babyId,
+          memberRole: opts.role,
+        },
+        familyMembers: members,
+      };
+
+      if (opts.role === 'caregiver') {
+        const remote = await fetchStateFromServer(clean);
+        if (remote.success && remote.state) {
+          // Prefer role from remote membership list when this user is already listed (e.g. seeded admin)
+          const listed = (remote.state.familyMembers || []).find((m) => m.userId === userId);
+          const effectiveRole: MemberRole = listed?.role || 'caregiver';
+          const mergedMembers =
+            members.length > 0
+              ? members
+              : remote.state.familyMembers?.length
+                ? remote.state.familyMembers
+                : selfMember
+                  ? [selfMember]
+                  : [];
+
+          const merged = mergeStates(nextState, remote.state);
+          const withRole = {
+            ...merged,
+            profile: {
+              name: opts.babyName.trim() || merged.profile.name || remote.state.profile.name,
+              birthDate: opts.birthDate || merged.profile.birthDate || remote.state.profile.birthDate,
+            },
+            settings: {
+              ...merged.settings,
+              familySyncCode: clean,
+              autoSyncEnabled: true,
+              babyId: opts.babyId || merged.settings.babyId,
+              memberRole: effectiveRole,
+            },
+            familyMembers: mergedMembers,
+          };
+          setState(withRole);
+          await uploadStateToServer(clean, withRole);
+          showToast(
+            effectiveRole === 'admin'
+              ? 'Joined as admin — sample family loaded'
+              : 'Joined family — existing records kept & merged'
+          );
+          return { success: true };
+        }
+        // No remote yet: still enable sync with local (possibly migrated) data
+      }
+
+      const upload = await uploadStateToServer(clean, nextState);
+      if (!upload.success) {
+        showToast(`Saved locally; cloud sync: ${upload.error}`);
+        return { success: true }; // local setup still succeeded
+      }
+      showToast(opts.role === 'admin' ? 'Family created — you are the admin' : 'Joined family');
+      return { success: true };
+    },
+    [userId, displayName, state, showToast]
+  );
+
   const resetToDemoData = useCallback(() => {
     const demoState = createInitialMockState();
     setState(demoState);
@@ -1000,6 +1258,12 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
         deleteHealthNote,
         updateProfile,
         updateSettings,
+        setupFamilyShare,
+        cloudBootstrap,
+        discoveredBabies,
+        forceOnboarding,
+        adoptDiscoveredBaby,
+        skipBabyDiscovery,
         resetToDemoData,
         clearAllData,
         exportData,

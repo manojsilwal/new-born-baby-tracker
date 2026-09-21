@@ -1,6 +1,7 @@
 // src/components/modals/SettingsModal.tsx
 import React, { useState, useRef } from 'react';
 import { useTracker } from '../../context/TrackerContext';
+import { useAuth } from '../../context/AuthContext';
 import {
   X,
   Moon,
@@ -16,6 +17,8 @@ import {
   Cloud,
   RefreshCw,
   Copy,
+  LogOut,
+  Shield,
 } from 'lucide-react';
 
 export const SettingsModal: React.FC = () => {
@@ -34,6 +37,7 @@ export const SettingsModal: React.FC = () => {
     disableSync,
     showToast,
   } = useTracker();
+  const { user, displayName, signOut } = useAuth();
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [confirmClear, setConfirmClear] = useState<boolean>(false);
@@ -168,6 +172,12 @@ export const SettingsModal: React.FC = () => {
                       <span className="font-mono text-sm font-bold text-slate-900 dark:text-slate-100 uppercase">
                         {state.settings.familySyncCode}
                       </span>
+                      {state.settings.memberRole && (
+                        <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-sage-700 dark:text-sage-300">
+                          <Shield className="w-3 h-3" />
+                          Your role: {state.settings.memberRole === 'admin' ? 'Admin' : 'Caregiver'}
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center space-x-1">
                       <button
@@ -558,6 +568,35 @@ export const SettingsModal: React.FC = () => {
             </div>
           </div>
 
+          {/* Account */}
+          <div className="space-y-2 pt-2 border-t border-warmgray-200 dark:border-charcoal-700">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Account
+            </label>
+            <div className="p-3 rounded-xl bg-white dark:bg-charcoal-800 border border-warmgray-200 dark:border-charcoal-700 text-xs text-slate-600 dark:text-slate-300 space-y-2">
+              <p>
+                Signed in as{' '}
+                <span className="font-semibold text-slate-900 dark:text-slate-100">
+                  {displayName || user?.email}
+                </span>
+              </p>
+              <p className="text-[11px] text-slate-400">
+                Sign out keeps your records on this device. Sign back in with the same email to continue.
+              </p>
+              <button
+                type="button"
+                onClick={async () => {
+                  closeModal();
+                  await signOut();
+                }}
+                className="w-full py-2.5 rounded-xl border border-warmgray-300 dark:border-charcoal-700 text-slate-700 dark:text-slate-200 font-medium text-xs flex items-center justify-center gap-1.5 min-h-[44px] hover:bg-warmgray-50 dark:hover:bg-charcoal-700"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                Sign out
+              </button>
+            </div>
+          </div>
+
           {/* Privacy & Medical Disclaimers */}
           <div className="pt-2 border-t border-warmgray-200 dark:border-charcoal-700 space-y-3">
             <div className="flex items-start space-x-2.5 p-3 rounded-xl bg-sage-50/70 dark:bg-sage-950/30 border border-sage-200 dark:border-sage-900/50 text-xs text-sage-900 dark:text-sage-300">
@@ -565,7 +604,7 @@ export const SettingsModal: React.FC = () => {
               <div>
                 <span className="font-semibold block mb-0.5">Secure Storage & Privacy</span>
                 Records are cached in your local browser and synced to your dedicated Supabase server database when
-                configured.
+                configured. Duplicate care entries within 10 minutes keep the admin&apos;s version.
               </div>
             </div>
 

@@ -317,6 +317,12 @@ export const HistoryView: React.FC = () => {
                                       Temp: {formatTemperature((e as TemperatureEvent).temperatureCelsius, state.settings.temperatureUnit)}
                                     </span>
                                   )}
+                                  {e.recordedBy && (
+                                    <span className="block text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 truncate">
+                                      by {e.recordedBy.displayName}
+                                      {e.recordedBy.role === 'admin' ? ' (Admin)' : ''}
+                                    </span>
+                                  )}
                                   {e.note && (
                                     <span className="text-[11px] text-slate-400 italic ml-1.5">
                                       - {e.note}
